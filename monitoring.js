@@ -16,8 +16,8 @@ class Monitoring {
     
     this.alerts = [];
     this.thresholds = {
-      cpu: 80, // %
-      memory: 85, // %
+      cpu: 80,
+      memory: 85,
       bots_disconnected: 2,
       connection_failures: 5,
       suspicion_level: 70
@@ -31,7 +31,6 @@ class Monitoring {
   setupLogging() {
     fs.ensureDirSync(this.logDir);
     
-    // Create log files
     this.logFiles = {
       system: path.join(this.logDir, 'system.log'),
       network: path.join(this.logDir, 'network.log'),
@@ -44,22 +43,11 @@ class Monitoring {
   startMonitoring() {
     console.log('📊 Starting comprehensive monitoring system...');
     
-    // System monitoring
     setInterval(() => this.monitorSystem(), 30000);
-    
-    // Network monitoring
     setInterval(() => this.monitorNetwork(), 45000);
-    
-    // Bot monitoring
     setInterval(() => this.monitorBots(), 60000);
-    
-    // Performance monitoring
     setInterval(() => this.monitorPerformance(), 90000);
-    
-    // Alert checking
     setInterval(() => this.checkAlerts(), 120000);
-    
-    // Log rotation
     setInterval(() => this.rotateLogs(), 3600000);
     
     console.log('✅ Monitoring system active');
@@ -88,7 +76,6 @@ class Monitoring {
       
       this.metrics.system = metrics;
       
-      // Check thresholds
       if (metrics.cpu.usage > this.thresholds.cpu) {
         this.alert('high_cpu', `CPU usage at ${metrics.cpu.usage.toFixed(1)}%`);
       }
@@ -97,7 +84,6 @@ class Monitoring {
         this.alert('high_memory', `Memory usage at ${metrics.memory.percentage.toFixed(1)}%`);
       }
       
-      // Log system metrics
       this.logToFile('system', metrics);
       
     } catch (error) {
@@ -133,8 +119,6 @@ class Monitoring {
       };
       
       this.metrics.network = metrics;
-      
-      // Log network metrics
       this.logToFile('network', metrics);
       
     } catch (error) {
@@ -163,7 +147,6 @@ class Monitoring {
   }
   
   async testBandwidth() {
-    // Simplified bandwidth test
     return {
       download: 'N/A',
       upload: 'N/A'
@@ -172,14 +155,13 @@ class Monitoring {
   
   async monitorBots() {
     try {
-      // Get bot manager instance
-      const botManager = require('./bot');
+      const botManager = require('./bot').botManager;
       
       const metrics = {
         timestamp: new Date().toISOString(),
-        totalBots: botManager.getBotCount ? botManager.getBotCount() : 0,
-        activeBots: botManager.getActiveBots ? botManager.getActiveBots().length : 0,
-        botDetails: botManager.getActiveBots ? botManager.getActiveBots() : [],
+        totalBots: botManager ? botManager.bots.size : 0,
+        activeBots: botManager ? botManager.getActiveBots().length : 0,
+        botDetails: botManager ? botManager.getBotStatus() : [],
         connectionStats: {
           successful: 0,
           failed: 0,
@@ -193,15 +175,12 @@ class Monitoring {
         }
       };
       
-      // Check thresholds
       const disconnected = metrics.totalBots - metrics.activeBots;
       if (disconnected >= this.thresholds.bots_disconnected) {
         this.alert('bots_disconnected', `${disconnected} bots disconnected`);
       }
       
       this.metrics.bots = metrics;
-      
-      // Log bot metrics
       this.logToFile('bots', metrics);
       
     } catch (error) {
@@ -232,8 +211,6 @@ class Monitoring {
       };
       
       this.metrics.performance = metrics;
-      
-      // Log performance metrics
       this.logToFile('performance', metrics);
       
     } catch (error) {
@@ -252,43 +229,45 @@ class Monitoring {
   }
   
   async measureEventLoopUtilization() {
-    // Simplified ELU measurement
     return { active: 0, idle: 0, utilization: 0 };
   }
   
   async getGCStats() {
-    const gc = require('gc-stats')();
-    return new Promise(resolve => {
-      const stats = {
-        count: 0,
-        time: 0,
-        lastType: 'unknown'
-      };
-      
-      gc.on('stats', (info) => {
-        stats.count++;
-        stats.time += info.pause;
-        stats.lastType = info.gctype;
+    try {
+      const gc = require('gc-stats')();
+      return new Promise(resolve => {
+        const stats = {
+          count: 0,
+          time: 0,
+          lastType: 'unknown'
+        };
+        
+        gc.on('stats', (info) => {
+          stats.count++;
+          stats.time += info.pause;
+          stats.lastType = info.gctype;
+        });
+        
+        setTimeout(() => {
+          gc.removeAllListeners();
+          resolve(stats);
+        }, 1000);
       });
-      
-      setTimeout(() => {
-        gc.removeAllListeners();
-        resolve(stats);
-      }, 1000);
-    });
+    } catch (error) {
+      return { count: 0, time: 0, lastType: 'unknown' };
+    }
   }
   
   checkAlerts() {
     const now = Date.now();
     const recentAlerts = this.alerts.filter(alert => 
-      now - alert.timestamp < 3600000 // Last hour
+      now - alert.timestamp < 3600000
     );
     
     if (recentAlerts.length > 10) {
       this.alert('alert_flood', `Too many alerts: ${recentAlerts.length} in last hour`);
     }
     
-    // Check anti-detection suspicion
     const AntiDetection = require('./anti-detection');
     if (AntiDetection.suspicionLevel > this.thresholds.suspicion_level) {
       this.alert('high_suspicion', 
@@ -308,15 +287,12 @@ class Monitoring {
     
     this.alerts.push(alert);
     
-    // Keep only recent alerts
     if (this.alerts.length > 1000) {
       this.alerts = this.alerts.slice(-500);
     }
     
-    // Log alert
     this.logToFile('alerts', alert);
     
-    // Console output for serious alerts
     if (severity === 'critical' || severity === 'error') {
       console.error(`🚨 ${severity.toUpperCase()}: ${type} - ${message}`);
     } else if (severity === 'warning') {
@@ -325,7 +301,6 @@ class Monitoring {
       console.log(`ℹ️ INFO: ${type} - ${message}`);
     }
     
-    // Trigger actions based on alert type
     this.handleAlert(alert);
     
     return alert;
@@ -357,7 +332,6 @@ class Monitoring {
   
   throttleActivity() {
     console.log('⚡ Throttling activity due to high CPU');
-    // Reduce bot activity intensity
   }
   
   cleanupMemory() {
@@ -369,7 +343,6 @@ class Monitoring {
   
   triggerReconnection() {
     console.log('🔌 Triggering bot reconnections');
-    // Trigger bot reconnection logic
   }
   
   triggerAntiDetectionCountermeasures() {
@@ -404,7 +377,7 @@ class Monitoring {
         const stats = fs.statSync(filePath);
         const sizeMB = stats.size / (1024 * 1024);
         
-        if (sizeMB > 10) { // Rotate if > 10MB
+        if (sizeMB > 10) {
           const rotatedFile = filePath.replace('.log', `_${dateStr}.log`);
           fs.renameSync(filePath, rotatedFile);
           console.log(`📁 Rotated ${type} log: ${sizeMB.toFixed(2)}MB`);
@@ -437,7 +410,6 @@ class Monitoring {
       score: 100
     };
     
-    // System health
     if (this.metrics.system.memory && this.metrics.system.memory.percentage > 85) {
       health.components.memory = 'warning';
       health.score -= 20;
@@ -448,7 +420,6 @@ class Monitoring {
       health.score -= 20;
     }
     
-    // Bot health
     if (this.metrics.bots) {
       const disconnected = this.metrics.bots.totalBots - this.metrics.bots.activeBots;
       if (disconnected > 0) {
@@ -457,20 +428,17 @@ class Monitoring {
       }
     }
     
-    // Network health
     if (this.metrics.network.latency && this.metrics.network.latency > 200) {
       health.components.network = 'warning';
       health.score -= 15;
     }
     
-    // Anti-detection health
     const suspicion = require('./anti-detection').suspicionLevel;
     if (suspicion > 50) {
       health.components.anti_detection = 'warning';
       health.score -= suspicion / 2;
     }
     
-    // Overall health
     if (health.score >= 80) health.overall = 'healthy';
     else if (health.score >= 50) health.overall = 'degraded';
     else if (health.score >= 20) health.overall = 'unhealthy';
@@ -493,16 +461,14 @@ class Monitoring {
       logSizes: {}
     };
     
-    // Count alerts by severity
     this.alerts.forEach(alert => {
       stats.alertsBySeverity[alert.severity] = (stats.alertsBySeverity[alert.severity] || 0) + 1;
     });
     
-    // Get log file sizes
     Object.entries(this.logFiles).forEach(([type, filePath]) => {
       if (fs.existsSync(filePath)) {
-        const stats = fs.statSync(filePath);
-        stats.logSizes[type] = stats.size;
+        const fileStats = fs.statSync(filePath);
+        stats.logSizes[type] = fileStats.size;
       }
     });
     
@@ -555,4 +521,15 @@ class Monitoring {
   }
 }
 
-module.exports = new Monitoring();
+// Create singleton instance
+const monitoring = new Monitoring();
+
+// Export for use in other modules
+module.exports = monitoring;
+
+// Auto-start if this module is run directly
+if (require.main === module) {
+  console.log('🚀 Starting Monitoring system...');
+  console.log('✅ Monitoring system ready');
+  console.log('📊 Monitoring all system components');
+}
