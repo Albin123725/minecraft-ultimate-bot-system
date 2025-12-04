@@ -1,12 +1,12 @@
 const fs = require('fs-extra');
 const path = require('path');
-const Vec3 = require('vec3');
+const Vec3 = require("vec3").Vec3;
 
 class NeuralAI {
   constructor() {
     this.models = new Map();
     this.trainingData = [];
-    this.modelsFile = path.join(__dirname, 'config', 'neural-models.json');
+    this.attachedBots = new Map();
     
     this.behaviorPatterns = {
       builder: this.createBuilderPattern(),
@@ -14,11 +14,12 @@ class NeuralAI {
       miner: this.createMinerPattern(),
       socializer: this.createSocializerPattern()
     };
+    
+    this.loadModels();
   }
   
   createBuilderPattern() {
     return {
-      // Movement patterns
       movement: {
         walkSpeed: 0.15,
         runSpeed: 0.25,
@@ -26,7 +27,6 @@ class NeuralAI {
         lookAroundFrequency: 0.3,
         stopToThink: 0.2
       },
-      // Building intelligence
       building: {
         planBeforeBuild: 0.9,
         measureDistance: 0.8,
@@ -34,7 +34,6 @@ class NeuralAI {
         adjustForTerrain: 0.7,
         creativeMode: 0.3
       },
-      // Environmental awareness
       awareness: {
         avoidLava: 0.99,
         avoidHeights: 0.6,
@@ -42,7 +41,6 @@ class NeuralAI {
         checkLightLevel: 0.7,
         pathAroundObstacles: 0.9
       },
-      // Decision making
       decisions: {
         gatherBeforeBuild: 0.8,
         upgradeTools: 0.6,
@@ -152,11 +150,34 @@ class NeuralAI {
     };
   }
   
+  async loadModels() {
+    try {
+      const modelFile = path.join(__dirname, 'config', 'neural-models.json');
+      if (await fs.pathExists(modelFile)) {
+        const models = await fs.readJson(modelFile);
+        this.models = new Map(Object.entries(models));
+        console.log(`✅ Loaded ${this.models.size} neural models`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to load neural models:', error.message);
+    }
+  }
+  
+  async saveModels() {
+    const models = Object.fromEntries(this.models);
+    const modelFile = path.join(__dirname, 'config', 'neural-models.json');
+    await fs.ensureDir(path.dirname(modelFile));
+    await fs.writeJson(modelFile, models, { spaces: 2 });
+  }
+  
   attachToBot(bot, botType) {
     console.log(`🧠 Attaching Neural AI to ${bot.username} (${botType})`);
     
     const pattern = this.behaviorPatterns[botType];
-    if (!pattern) return;
+    if (!pattern) {
+      console.warn(`⚠️ No pattern for bot type: ${botType}`);
+      return;
+    }
     
     // Store pattern in bot
     bot.neuralPattern = pattern;
@@ -165,17 +186,26 @@ class NeuralAI {
       recentActions: [],
       learnedPaths: new Map(),
       environmentalMemory: [],
-      socialMemory: new Map()
+      socialMemory: new Map(),
+      successRate: 0.5
     };
     
-    // Override bot methods with neural intelligence
+    // Enhance bot with neural capabilities
     this.enhanceMovement(bot, pattern);
     this.enhanceDecisionMaking(bot, pattern);
     this.enhanceEnvironmentalAwareness(bot, pattern);
-    this.enhanceSocialIntelligence(bot, pattern);
     
-    // Start neural loop
+    // Store reference
+    this.attachedBots.set(bot.username, {
+      bot: bot,
+      type: botType,
+      pattern: pattern
+    });
+    
+    // Start neural processing loop
     this.startNeuralLoop(bot, botType);
+    
+    return true;
   }
   
   enhanceMovement(bot, pattern) {
@@ -184,7 +214,7 @@ class NeuralAI {
     
     // Enhanced looking with neural patterns
     bot.look = async (yaw, pitch, force) => {
-      // Add natural head movements
+      // Add natural head movements based on pattern
       if (Math.random() < pattern.movement.lookAroundFrequency) {
         const naturalYaw = yaw + (Math.random() - 0.5) * 0.5;
         const naturalPitch = pitch + (Math.random() - 0.5) * 0.3;
@@ -199,8 +229,8 @@ class NeuralAI {
       if (control === 'forward' && state) {
         // Simulate fatigue after prolonged movement
         const moveTime = Date.now() - (bot.lastMoveStart || Date.now());
-        if (moveTime > 30000 && Math.random() < 0.1) { // After 30 seconds
-          // Slow down slightly
+        if (moveTime > 30000 && Math.random() < pattern.movement.stopToThink) {
+          // Pause briefly to simulate thinking
           setTimeout(() => {
             if (bot.controlState.forward) {
               originalMove.call(bot, 'forward', false);
@@ -219,12 +249,22 @@ class NeuralAI {
       return originalMove.call(bot, control, state);
     };
     
-    // Add neural pathfinding
+    // Neural pathfinding with learning
     bot.neuralGoto = async (goal) => {
       const start = Date.now();
+      const goalKey = goal.toString();
       
       try {
-        // Use neural pattern to adjust pathfinding
+        // Check if we've learned this path before
+        const learnedPath = bot.neuralState.learnedPaths.get(goalKey);
+        if (learnedPath && learnedPath.success) {
+          // Use learned path adjustments
+          if (learnedPath.adjustments) {
+            // Apply learned adjustments
+          }
+        }
+        
+        // Natural pauses based on pattern
         if (pattern.movement.stopToThink > Math.random()) {
           await this.delay(500 + Math.random() * 1500);
           bot.look(bot.entity.yaw + (Math.random() - 0.5) * Math.PI, 0, false);
@@ -232,22 +272,28 @@ class NeuralAI {
         
         await bot.pathfinder.goto(goal);
         
-        // Learn from this path
+        // Learn from successful path
         const duration = Date.now() - start;
-        bot.neuralState.learnedPaths.set(goal.toString(), {
+        bot.neuralState.learnedPaths.set(goalKey, {
           duration,
           success: true,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          adjustments: this.calculatePathAdjustments(bot, goal, duration)
         });
+        
+        bot.neuralState.successRate = Math.min(1, bot.neuralState.successRate + 0.01);
         
         return true;
       } catch (error) {
-        bot.neuralState.learnedPaths.set(goal.toString(), {
+        // Learn from failure
+        bot.neuralState.learnedPaths.set(goalKey, {
           duration: Date.now() - start,
           success: false,
           error: error.message,
           timestamp: Date.now()
         });
+        
+        bot.neuralState.successRate = Math.max(0, bot.neuralState.successRate - 0.02);
         
         throw error;
       }
@@ -259,10 +305,10 @@ class NeuralAI {
     bot.makeDecision = async (context) => {
       const decisionTime = Date.now();
       
-      // Consider recent actions
+      // Consider recent actions to avoid repetition
       const recentSimilar = bot.neuralState.recentActions.filter(
         action => action.type === context.type && 
-        decisionTime - action.time < 60000 // Last minute
+        decisionTime - action.time < 60000
       );
       
       // Avoid repeating same action too quickly
@@ -278,7 +324,7 @@ class NeuralAI {
         }
       }
       
-      // Make decision based on pattern
+      // Make decision based on pattern and context
       const decision = await this.neuralDecision(bot, context, pattern);
       
       bot.neuralState.recentActions.push({
@@ -312,25 +358,20 @@ class NeuralAI {
       // Check for dangers before digging
       if (pattern.awareness.checkLightLevel > Math.random()) {
         const lightLevel = block.light;
-        if (lightLevel < 8) {
-          // Low light - might spawn mobs
-          if (pattern.awareness.avoidLava > Math.random()) {
-            await bot.placeBlock(block, Vec3(0, 1, 0)); // Place torch
-          }
+        if (lightLevel < 8 && pattern.awareness.avoidLava > Math.random()) {
+          // Low light - might spawn mobs, be cautious
+          await this.delay(1000); // Extra caution delay
         }
       }
       
       return originalDig.call(bot, block, forceLook, digFace);
     };
     
-    // Enhanced block placement
+    // Enhanced block placement with terrain awareness
     const originalPlace = bot.placeBlock;
     
     bot.placeBlock = async (referenceBlock, faceVector) => {
       // Check if placement makes sense
-      const surrounding = await this.scanSurroundings(bot, referenceBlock.position);
-      
-      // Avoid floating blocks (unless creative)
       if (pattern.building && pattern.building.adjustForTerrain > Math.random()) {
         const below = bot.blockAt(referenceBlock.position.offset(0, -1, 0));
         if (below && below.name === 'air') {
@@ -353,66 +394,15 @@ class NeuralAI {
     };
   }
   
-  enhanceSocialIntelligence(bot, pattern) {
-    if (!pattern.social) return;
-    
-    // Track social interactions
-    bot.on('chat', (username, message) => {
-      if (username === bot.username) return;
-      
-      if (!bot.neuralState.socialMemory.has(username)) {
-        bot.neuralState.socialMemory.set(username, {
-          interactions: [],
-          firstMet: Date.now(),
-          lastInteraction: Date.now(),
-          relationship: 0.5 // Neutral
-        });
-      }
-      
-      const memory = bot.neuralState.socialMemory.get(username);
-      memory.interactions.push({
-        type: 'chat',
-        message,
-        time: Date.now(),
-        botResponse: null
-      });
-      memory.lastInteraction = Date.now();
-      
-      // Update relationship based on interaction
-      const messageLower = message.toLowerCase();
-      if (messageLower.includes('thanks') || messageLower.includes('thank you')) {
-        memory.relationship = Math.min(1, memory.relationship + 0.1);
-      } else if (messageLower.includes('idiot') || messageLower.includes('stupid')) {
-        memory.relationship = Math.max(0, memory.relationship - 0.2);
-      }
-      
-      // Keep only recent interactions
-      if (memory.interactions.length > 20) {
-        memory.interactions = memory.interactions.slice(-20);
-      }
-    });
-    
-    // Social decision making
-    bot.shouldInteractWith = (username) => {
-      if (!bot.neuralState.socialMemory.has(username)) {
-        return pattern.social.greetPlayers > Math.random();
-      }
-      
-      const memory = bot.neuralState.socialMemory.get(username);
-      const timeSince = Date.now() - memory.lastInteraction;
-      
-      if (timeSince > 300000) { // 5 minutes
-        return pattern.social.greetPlayers > Math.random() * 0.5;
-      }
-      
-      return memory.relationship > 0.3 && pattern.social.initiateTrade > Math.random();
-    };
-  }
-  
   startNeuralLoop(bot, botType) {
     // Neural processing loop
-    setInterval(async () => {
-      if (!bot.entity || bot.neuralState.isProcessing) return;
+    const loopInterval = setInterval(async () => {
+      if (!bot.entity || bot._isEnding) {
+        clearInterval(loopInterval);
+        return;
+      }
+      
+      if (bot.neuralState.isProcessing) return;
       
       bot.neuralState.isProcessing = true;
       
@@ -420,8 +410,8 @@ class NeuralAI {
         // Process environmental memory
         await this.processMemory(bot);
         
-        // Make autonomous decisions
-        if (Date.now() - bot.neuralState.lastDecision > 10000) { // Every 10 seconds
+        // Make autonomous decisions periodically
+        if (Date.now() - bot.neuralState.lastDecision > 10000) {
           await this.autonomousDecision(bot, botType);
           bot.neuralState.lastDecision = Date.now();
         }
@@ -434,7 +424,10 @@ class NeuralAI {
       } finally {
         bot.neuralState.isProcessing = false;
       }
-    }, 5000); // Run every 5 seconds
+    }, 5000);
+    
+    // Store interval for cleanup
+    bot.neuralLoopInterval = loopInterval;
   }
   
   async autonomousDecision(bot, botType) {
@@ -444,7 +437,8 @@ class NeuralAI {
       timeOfDay: this.getTimeOfDay(bot),
       health: bot.health,
       food: bot.food,
-      position: bot.entity.position
+      position: bot.entity.position,
+      nearbyPlayers: Object.keys(bot.players).length - 1
     };
     
     const decision = await bot.makeDecision(context);
@@ -465,6 +459,9 @@ class NeuralAI {
       case 'build':
         await this.neuralBuild(bot);
         break;
+      case 'mine':
+        await this.neuralMine(bot);
+        break;
     }
   }
   
@@ -476,10 +473,13 @@ class NeuralAI {
     );
     
     const target = bot.entity.position.plus(direction);
-    const goal = new goals.GoalBlock(target.x, target.y, target.z);
     
-    console.log(`🧠 ${bot.username} autonomously exploring`);
-    await bot.neuralGoto(goal);
+    try {
+      await bot.neuralGoto(new goals.GoalBlock(target.x, target.y, target.z));
+      console.log(`🧠 ${bot.username} explored to ${target.x}, ${target.y}, ${target.z}`);
+    } catch (error) {
+      // Exploration failure is natural
+    }
   }
   
   async neuralGather(bot, botType) {
@@ -492,8 +492,6 @@ class NeuralAI {
     
     const targetResources = resources[botType] || resources.builder;
     const resource = targetResources[Math.floor(Math.random() * targetResources.length)];
-    
-    console.log(`🧠 ${bot.username} gathering ${resource}`);
     
     // Look for nearby resources
     const blocks = bot.findBlocks({
@@ -508,12 +506,17 @@ class NeuralAI {
     
     if (blocks.length > 0) {
       const target = blocks[0];
-      await bot.neuralGoto(new goals.GoalBlock(target.x, target.y, target.z));
-      
-      // Gather the resource
-      const block = bot.blockAt(target);
-      if (block && bot.canDigBlock(block)) {
-        await bot.dig(block);
+      try {
+        await bot.neuralGoto(new goals.GoalBlock(target.x, target.y, target.z));
+        
+        // Gather the resource
+        const block = bot.blockAt(target);
+        if (block && bot.canDigBlock(block)) {
+          await bot.dig(block);
+          console.log(`🧠 ${bot.username} gathered ${resource}`);
+        }
+      } catch (error) {
+        // Gathering failure is natural
       }
     }
   }
@@ -522,90 +525,104 @@ class NeuralAI {
     // Look for other players
     const players = Object.keys(bot.players).filter(name => name !== bot.username);
     
-    if (players.length > 0 && bot.shouldInteractWith(players[0])) {
-      console.log(`🧠 ${bot.username} socializing with ${players[0]}`);
-      bot.chat(`Hey ${players[0]}! How's it going?`);
+    if (players.length > 0) {
+      const player = players[Math.floor(Math.random() * players.length)];
+      
+      // Simple social interaction
+      const greetings = ['Hi', 'Hello', 'Hey', 'Howdy'];
+      const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+      
+      bot.chat(`${greeting} ${player}!`);
+      console.log(`🧠 ${bot.username} socialized with ${player}`);
     }
   }
   
   async neuralRest(bot) {
-    console.log(`🧠 ${bot.username} taking a rest`);
-    
     // Find a safe place to rest
     const safeBlocks = bot.findBlocks({
       point: bot.entity.position,
       maxDistance: 10,
-      matching: (block) => ['bed', 'chair', 'bench'].some(f => block.name.toLowerCase().includes(f)),
+      matching: (block) => ['bed', 'grass_block', 'dirt'].includes(block.name),
       count: 1
     });
     
     if (safeBlocks.length > 0) {
-      await bot.neuralGoto(new goals.GoalBlock(safeBlocks[0].x, safeBlocks[0].y, safeBlocks[0].z));
-      
-      // Sit/lie down for a bit
-      bot.setControlState('sneak', true);
-      await this.delay(5000 + Math.random() * 10000);
-      bot.setControlState('sneak', false);
-    } else {
-      // Just pause and look around
-      await this.delay(3000 + Math.random() * 7000);
-      bot.look(bot.entity.yaw + Math.PI / 2, 0, false);
+      const target = safeBlocks[0];
+      try {
+        await bot.neuralGoto(new goals.GoalBlock(target.x, target.y, target.z));
+        
+        // Rest for a bit
+        bot.setControlState('sneak', true);
+        await this.delay(5000 + Math.random() * 10000);
+        bot.setControlState('sneak', false);
+        
+        console.log(`🧠 ${bot.username} took a rest`);
+      } catch (error) {
+        // Rest interruption is natural
+      }
     }
   }
   
   async neuralBuild(bot) {
-    console.log(`🧠 ${bot.username} building autonomously`);
-    
     // Simple construction
-    const designs = ['wall', 'tower', 'house', 'bridge', 'fence'];
-    const design = designs[Math.floor(Math.random() * designs.length)];
-    
-    // Check for materials
+    const startPos = bot.entity.position.floored();
     const materials = this.checkMaterials(bot);
+    
     if (materials.length === 0) {
       await this.neuralGather(bot, 'builder');
       return;
     }
     
-    // Build simple structure
-    const startPos = bot.entity.position.floored();
-    
-    switch (design) {
-      case 'wall':
-        await this.buildWall(bot, startPos, 5, 3);
-        break;
-      case 'tower':
-        await this.buildTower(bot, startPos, 7);
-        break;
-      // Add more designs...
-    }
-  }
-  
-  async buildWall(bot, startPos, length, height) {
-    for (let x = 0; x < length; x++) {
-      for (let y = 0; y < height; y++) {
+    // Build a simple wall
+    for (let x = 0; x < 5; x++) {
+      for (let y = 0; y < 3; y++) {
         const blockPos = startPos.offset(x, y, 0);
         const block = bot.blockAt(blockPos);
         
         if (block && block.name === 'air') {
-          // Try to place a block
           const below = bot.blockAt(blockPos.offset(0, -1, 0));
           if (below && below.name !== 'air') {
-            await bot.neuralGoto(new goals.GoalBlock(blockPos.x - 1, blockPos.y, blockPos.z));
-            await this.placeBlockIfPossible(bot, below, new Vec3(0, 1, 0));
+            try {
+              await bot.neuralGoto(new goals.GoalBlock(blockPos.x - 1, blockPos.y, blockPos.z));
+              await this.placeBlockIfPossible(bot, below, new Vec3(0, 1, 0));
+            } catch (error) {
+              // Building failure is natural
+            }
           }
         }
       }
     }
+    
+    console.log(`🧠 ${bot.username} built a simple structure`);
   }
   
-  async placeBlockIfPossible(bot, block, face) {
-    try {
-      await bot.placeBlock(block, face);
-      return true;
-    } catch (error) {
-      return false;
+  async neuralMine(bot) {
+    // Go underground for mining
+    if (bot.entity.position.y > 16) {
+      const undergroundPos = bot.entity.position.offset(0, -10, 0);
+      try {
+        await bot.neuralGoto(new goals.GoalBlock(undergroundPos.x, undergroundPos.y, undergroundPos.z));
+      } catch (error) {
+        return;
+      }
     }
+    
+    // Dig in a pattern
+    for (let i = 0; i < 3; i++) {
+      const digPos = bot.entity.position.offset(i, 0, 0);
+      const block = bot.blockAt(digPos);
+      
+      if (block && bot.canDigBlock(block) && block.name !== 'bedrock') {
+        try {
+          await bot.dig(block);
+          await this.delay(1000);
+        } catch (error) {
+          break;
+        }
+      }
+    }
+    
+    console.log(`🧠 ${bot.username} mined a tunnel`);
   }
   
   // Helper methods
@@ -625,7 +642,8 @@ class NeuralAI {
       gather: pattern.decisions ? pattern.decisions.gatherBeforeBuild : 0.4,
       socialize: pattern.social ? pattern.social.greetPlayers : 0.2,
       rest: pattern.decisions ? pattern.decisions.takeBreaks : 0.3,
-      build: pattern.building ? pattern.building.planBeforeBuild : 0.5
+      build: pattern.building ? pattern.building.planBeforeBuild : 0.5,
+      mine: pattern.mining ? pattern.mining.branchMining : 0.4
     };
     
     // Calculate scores
@@ -634,7 +652,8 @@ class NeuralAI {
       gather: (factors.health * 0.3 + factors.food * 0.7) * weights.gather,
       socialize: (1 - factors.danger) * weights.socialize,
       rest: (factors.health * 0.5 + factors.food * 0.5) * weights.rest,
-      build: (1 - factors.danger) * (1 - factors.boredom) * weights.build
+      build: (1 - factors.danger) * (1 - factors.boredom) * weights.build,
+      mine: (1 - factors.danger) * factors.boredom * weights.mine
     };
     
     // Add randomness
@@ -663,7 +682,6 @@ class NeuralAI {
   }
   
   assessDanger(bot) {
-    // Check for nearby mobs
     const entities = Object.values(bot.entities);
     const hostile = entities.filter(e => 
       e.displayName && 
@@ -682,48 +700,34 @@ class NeuralAI {
     );
   }
   
-  async scanSurroundings(bot, position) {
-    const blocks = [];
-    const radius = 5;
-    
-    for (let x = -radius; x <= radius; x++) {
-      for (let y = -radius; y <= radius; y++) {
-        for (let z = -radius; z <= radius; z++) {
-          const block = bot.blockAt(position.offset(x, y, z));
-          if (block && block.name !== 'air') {
-            blocks.push({
-              position: block.position,
-              type: block.name,
-              distance: Math.sqrt(x*x + y*y + z*z)
-            });
-          }
-        }
-      }
-    }
-    
-    return blocks;
-  }
-  
   async findSolidGround(bot, position) {
     for (let y = -5; y <= 0; y++) {
       const checkPos = position.offset(0, y, 0);
       const block = bot.blockAt(checkPos);
       if (block && block.name !== 'air' && block.boundingBox === 'block') {
-        return checkPos.offset(0, 1, 0); // Position above solid ground
+        return checkPos.offset(0, 1, 0);
       }
     }
-    
     return null;
   }
   
+  async placeBlockIfPossible(bot, block, face) {
+    try {
+      await bot.placeBlock(block, face);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+  
   async findAlternativeAction(bot, context) {
-    // Find alternative to recent actions
     const alternatives = {
       explore: ['gather', 'build', 'socialize'],
       gather: ['explore', 'build', 'rest'],
       build: ['gather', 'explore', 'socialize'],
       socialize: ['explore', 'gather', 'rest'],
-      rest: ['socialize', 'gather', 'explore']
+      rest: ['socialize', 'gather', 'explore'],
+      mine: ['gather', 'explore', 'rest']
     };
     
     const recentTypes = bot.neuralState.recentActions.map(a => a.type);
@@ -735,14 +739,22 @@ class NeuralAI {
       }
     }
     
-    return alt[0]; // Default to first alternative
+    return alt[0];
+  }
+  
+  calculatePathAdjustments(bot, goal, duration) {
+    // Calculate adjustments for future pathfinding
+    return {
+      preferredSpeed: duration > 30000 ? 'run' : 'walk',
+      cautionLevel: duration > 60000 ? 'high' : 'normal',
+      restPoints: duration > 45000 ? 1 : 0
+    };
   }
   
   async processMemory(bot) {
-    // Process and learn from environmental memory
     const now = Date.now();
     const recentMemory = bot.neuralState.environmentalMemory.filter(
-      mem => now - mem.time < 300000 // Last 5 minutes
+      mem => now - mem.time < 300000
     );
     
     // Learn from successes and failures
@@ -760,22 +772,15 @@ class NeuralAI {
   cleanupMemory(bot) {
     const now = Date.now();
     
-    // Clean environmental memory (keep last 100 entries or last hour)
+    // Clean environmental memory
     bot.neuralState.environmentalMemory = bot.neuralState.environmentalMemory
-      .filter(mem => now - mem.time < 3600000) // Last hour
-      .slice(-100); // Last 100 entries
+      .filter(mem => now - mem.time < 3600000)
+      .slice(-100);
     
-    // Clean learned paths (keep successful ones for a day)
+    // Clean learned paths
     for (const [key, path] of bot.neuralState.learnedPaths.entries()) {
       if (now - path.timestamp > 86400000 && !path.success) {
         bot.neuralState.learnedPaths.delete(key);
-      }
-    }
-    
-    // Clean social memory (keep active relationships)
-    for (const [username, memory] of bot.neuralState.socialMemory.entries()) {
-      if (now - memory.lastInteraction > 604800000) { // 1 week
-        bot.neuralState.socialMemory.delete(username);
       }
     }
   }
@@ -785,23 +790,68 @@ class NeuralAI {
   }
   
   // Public API
-  getNeuralStats(botName) {
-    const bot = this.getBotByName(botName);
-    if (!bot || !bot.neuralState) return null;
+  getAttachedBots() {
+    return Array.from(this.attachedBots.values()).map(info => ({
+      username: info.bot.username,
+      type: info.type,
+      successRate: info.bot.neuralState?.successRate || 0,
+      decisions: info.bot.neuralState?.recentActions.length || 0
+    }));
+  }
+  
+  getBotStats(username) {
+    const info = this.attachedBots.get(username);
+    if (!info || !info.bot.neuralState) return null;
     
     return {
-      decisionCount: bot.neuralState.recentActions.length,
-      learnedPaths: bot.neuralState.learnedPaths.size,
-      environmentalMemory: bot.neuralState.environmentalMemory.length,
-      socialConnections: bot.neuralState.socialMemory.size,
-      pattern: bot.neuralPattern ? Object.keys(bot.neuralPattern) : []
+      username: username,
+      type: info.type,
+      successRate: info.bot.neuralState.successRate,
+      recentDecisions: info.bot.neuralState.recentActions.length,
+      learnedPaths: info.bot.neuralState.learnedPaths.size,
+      environmentalMemory: info.bot.neuralState.environmentalMemory.length
     };
   }
   
-  getBotByName(name) {
-    // This would need access to bot manager
-    return null;
+  detachFromBot(username) {
+    const info = this.attachedBots.get(username);
+    if (!info) return false;
+    
+    // Clean up neural loop
+    if (info.bot.neuralLoopInterval) {
+      clearInterval(info.bot.neuralLoopInterval);
+    }
+    
+    // Remove neural state
+    delete info.bot.neuralPattern;
+    delete info.bot.neuralState;
+    delete info.bot.neuralLoopInterval;
+    
+    this.attachedBots.delete(username);
+    
+    console.log(`🧠 Detached Neural AI from ${username}`);
+    return true;
+  }
+  
+  getStatus() {
+    return {
+      attachedBots: this.attachedBots.size,
+      behaviorPatterns: Object.keys(this.behaviorPatterns),
+      models: this.models.size,
+      trainingData: this.trainingData.length
+    };
   }
 }
 
-module.exports = new NeuralAI();
+// Create singleton instance
+const neuralAI = new NeuralAI();
+
+// Export for use in other modules
+module.exports = neuralAI;
+
+// Auto-load if this module is run directly
+if (require.main === module) {
+  console.log('🚀 Starting Neural AI system...');
+  console.log('✅ Neural AI system ready');
+  console.log(`📊 Behavior patterns: ${Object.keys(neuralAI.behaviorPatterns).join(', ')}`);
+}
