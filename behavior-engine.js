@@ -6,7 +6,8 @@ class BehaviorEngine {
   constructor() {
     this.behaviors = new Map();
     this.schedules = new Map();
-    this.patternsFile = path.join(__dirname, 'config', 'behavior-patterns.json');
+    this.activeBehaviors = new Map();
+    this.learningData = [];
     
     this.loadPatterns();
     this.setupGlobalSchedules();
@@ -14,13 +15,13 @@ class BehaviorEngine {
   
   async loadPatterns() {
     try {
-      if (await fs.pathExists(this.patternsFile)) {
-        const patterns = await fs.readJson(this.patternsFile);
+      const patternsFile = path.join(__dirname, 'config', 'behaviors.json');
+      if (await fs.pathExists(patternsFile)) {
+        const patterns = await fs.readJson(patternsFile);
         this.behaviors = new Map(Object.entries(patterns));
         console.log(`✅ Loaded ${this.behaviors.size} behavior patterns`);
       } else {
         await this.generateDefaultPatterns();
-        await this.savePatterns();
       }
     } catch (error) {
       console.error('❌ Failed to load behavior patterns:', error.message);
@@ -32,10 +33,10 @@ class BehaviorEngine {
     console.log('🔄 Generating default behavior patterns...');
     
     const patterns = {
-      // ================= DAILY PATTERNS =================
+      // Daily patterns
       weekday_morning: {
         type: 'time_based',
-        schedule: '0 8 * * 1-5', // 8 AM Mon-Fri
+        schedule: '0 8 * * 1-5',
         behaviors: [
           { action: 'login', probability: 0.8 },
           { action: 'check_inventory', probability: 0.9 },
@@ -48,7 +49,7 @@ class BehaviorEngine {
       
       weekday_evening: {
         type: 'time_based',
-        schedule: '0 18 * * 1-5', // 6 PM Mon-Fri
+        schedule: '0 18 * * 1-5',
         behaviors: [
           { action: 'login', probability: 0.9 },
           { action: 'group_activity', probability: 0.7 },
@@ -61,7 +62,7 @@ class BehaviorEngine {
       
       weekend_day: {
         type: 'time_based',
-        schedule: '0 10 * * 6,0', // 10 AM Sat,Sun
+        schedule: '0 10 * * 6,0',
         behaviors: [
           { action: 'login', probability: 0.95 },
           { action: 'extended_play', probability: 0.8 },
@@ -72,44 +73,7 @@ class BehaviorEngine {
         intensity: 'very_high'
       },
       
-      // ================= SEASONAL PATTERNS =================
-      exam_period: {
-        type: 'seasonal',
-        months: [11, 4], // Dec and May (exam periods)
-        behaviors: [
-          { action: 'reduced_activity', probability: 0.9 },
-          { action: 'short_sessions', probability: 0.8 },
-          { action: 'stress_relief_minigames', probability: 0.6 }
-        ],
-        duration: '3 weeks',
-        intensity: 'low'
-      },
-      
-      summer_vacation: {
-        type: 'seasonal',
-        months: [6, 7, 8], // Summer months
-        behaviors: [
-          { action: 'increased_activity', probability: 0.8 },
-          { action: 'all_day_play', probability: 0.6 },
-          { action: 'vacation_travel', probability: 0.4 }
-        ],
-        duration: '3 months',
-        intensity: 'high'
-      },
-      
-      holiday_season: {
-        type: 'seasonal',
-        months: [11, 12], // Nov-Dec
-        behaviors: [
-          { action: 'holiday_build', probability: 0.7 },
-          { action: 'gift_giving', probability: 0.6 },
-          { action: 'special_decoration', probability: 0.8 }
-        ],
-        duration: '2 months',
-        intensity: 'medium'
-      },
-      
-      // ================= PLAYER PERSONALITY PATTERNS =================
+      // Personality patterns
       builder_personality: {
         type: 'personality',
         traits: ['organized', 'creative', 'patient', 'perfectionist'],
@@ -156,97 +120,21 @@ class BehaviorEngine {
           { action: 'check_on_others', probability: 0.8 }
         ],
         intensity: 'social'
-      },
-      
-      // ================= LIFE EVENT PATTERNS =================
-      new_player_experience: {
-        type: 'life_event',
-        duration: '2 weeks',
-        behaviors: [
-          { action: 'ask_questions', probability: 0.9 },
-          { action: 'follow_others', probability: 0.8 },
-          { action: 'learn_basics', probability: 0.7 },
-          { action: 'make_mistakes', probability: 0.6 }
-        ],
-        progression: [
-          { day: 1, focus: 'controls' },
-          { day: 3, focus: 'crafting' },
-          { day: 7, focus: 'building' },
-          { day: 14, focus: 'social' }
-        ]
-      },
-      
-      veteran_player: {
-        type: 'life_event',
-        duration: 'permanent',
-        behaviors: [
-          { action: 'mentor_newbies', probability: 0.7 },
-          { action: 'advanced_builds', probability: 0.8 },
-          { action: 'server_infrastructure', probability: 0.6 },
-          { action: 'community_leadership', probability: 0.5 }
-        ]
-      },
-      
-      burnout_recovery: {
-        type: 'life_event',
-        duration: '1 week',
-        behaviors: [
-          { action: 'reduced_playtime', probability: 0.9 },
-          { action: 'casual_activities', probability: 0.8 },
-          { action: 'no_major_projects', probability: 0.7 },
-          { action: 'social_only', probability: 0.6 }
-        ]
-      },
-      
-      // ================= TECHNICAL PATTERNS =================
-      connection_issues: {
-        type: 'technical',
-        trigger: 'high_latency',
-        behaviors: [
-          { action: 'reduce_movement', probability: 0.8 },
-          { action: 'avoid_combat', probability: 0.9 },
-          { action: 'simple_tasks', probability: 0.7 },
-          { action: 'logout_early', probability: 0.6 }
-        ]
-      },
-      
-      low_performance: {
-        type: 'technical',
-        trigger: 'low_fps',
-        behaviors: [
-          { action: 'reduce_view_distance', probability: 0.9 },
-          { action: 'disable_particles', probability: 0.8 },
-          { action: 'avoid_dense_areas', probability: 0.7 },
-          { action: 'simplify_graphics', probability: 0.6 }
-        ]
-      },
-      
-      // ================= SOCIAL PATTERNS =================
-      group_dynamics: {
-        type: 'social',
-        group_size: '>2',
-        behaviors: [
-          { action: 'coordinate_actions', probability: 0.8 },
-          { action: 'share_resources', probability: 0.7 },
-          { action: 'role_assignment', probability: 0.6 },
-          { action: 'collective_decision', probability: 0.5 }
-        ]
-      },
-      
-      solo_play: {
-        type: 'social',
-        group_size: '1',
-        behaviors: [
-          { action: 'self_sufficient', probability: 0.9 },
-          { action: 'personal_projects', probability: 0.8 },
-          { action: 'quiet_focus', probability: 0.7 },
-          { action: 'reflection', probability: 0.6 }
-        ]
       }
     };
     
     this.behaviors = new Map(Object.entries(patterns));
+    
+    // Save patterns
+    await this.savePatterns();
     console.log(`✅ Generated ${this.behaviors.size} behavior patterns`);
+  }
+  
+  async savePatterns() {
+    const patterns = Object.fromEntries(this.behaviors);
+    const patternsFile = path.join(__dirname, 'config', 'behaviors.json');
+    await fs.ensureDir(path.dirname(patternsFile));
+    await fs.writeJson(patternsFile, patterns, { spaces: 2 });
   }
   
   setupGlobalSchedules() {
@@ -264,11 +152,6 @@ class BehaviorEngine {
       }
     }
     
-    // Setup monthly check for seasonal patterns
-    cron.schedule('0 0 1 * *', () => {
-      this.checkSeasonalPatterns();
-    });
-    
     console.log('✅ Global behavior schedules setup complete');
   }
   
@@ -278,7 +161,7 @@ class BehaviorEngine {
     
     console.log(`🎭 Activating behavior pattern: ${patternName}`);
     
-    // Apply pattern to all bots
+    // Apply pattern to all active bots
     this.applyPatternToBots(pattern);
     
     // Log activation
@@ -286,28 +169,24 @@ class BehaviorEngine {
   }
   
   applyPatternToBots(pattern) {
-    // This would apply to all active bots
-    // In implementation, this would iterate through bot manager
     console.log(`🎭 Applying ${pattern.type} pattern to bots`);
     
-    // Apply each behavior with its probability
-    pattern.behaviors.forEach(behavior => {
-      if (Math.random() < behavior.probability) {
-        console.log(`  ↪ ${behavior.action} (${behavior.probability})`);
-        this.executeBehavior(behavior.action);
+    // Get bot manager (assuming it's available globally or via require)
+    try {
+      const botManager = require('./bot').botManager;
+      if (botManager && botManager.getActiveBots) {
+        const activeBots = botManager.getActiveBots();
+        
+        activeBots.forEach(bot => {
+          pattern.behaviors.forEach(behavior => {
+            if (Math.random() < behavior.probability) {
+              this.executeBehavior(bot, behavior.action);
+            }
+          });
+        });
       }
-    });
-  }
-  
-  checkSeasonalPatterns() {
-    const now = new Date();
-    const currentMonth = now.getMonth(); // 0-11
-    
-    for (const [name, pattern] of this.behaviors) {
-      if (pattern.type === 'seasonal' && pattern.months.includes(currentMonth)) {
-        console.log(`🍂 Activating seasonal pattern: ${name} for month ${currentMonth + 1}`);
-        this.activatePattern(name);
-      }
+    } catch (error) {
+      console.error('❌ Could not apply pattern to bots:', error.message);
     }
   }
   
@@ -331,6 +210,16 @@ class BehaviorEngine {
     
     // Start behavior loop
     this.startBehaviorLoop(bot, botType);
+    
+    // Store reference
+    this.activeBehaviors.set(bot.username, {
+      bot: bot,
+      type: botType,
+      pattern: personality,
+      schedules: []
+    });
+    
+    return true;
   }
   
   applyPersonality(bot, personality) {
@@ -339,7 +228,7 @@ class BehaviorEngine {
     // Store traits for reference
     bot.personalityTraits = personality.traits;
     
-    // Modify bot behavior based on traits
+    // Apply initial behaviors
     personality.behaviors.forEach(behavior => {
       if (Math.random() < behavior.probability) {
         this.addBotBehavior(bot, behavior.action);
@@ -348,7 +237,6 @@ class BehaviorEngine {
   }
   
   setupBotSchedules(bot, botType) {
-    // Individual bot schedules based on personality
     const schedules = {
       builder: [
         { time: '0 9 * * *', action: 'morning_inspection' },
@@ -373,15 +261,20 @@ class BehaviorEngine {
     };
     
     const botSchedules = schedules[botType] || schedules.builder;
+    const botInfo = this.activeBehaviors.get(bot.username);
+    
+    if (!botInfo) return;
     
     botSchedules.forEach(schedule => {
       try {
-        cron.schedule(schedule.time, () => {
-          if (bot.entity) {
+        const job = cron.schedule(schedule.time, () => {
+          if (bot.entity && !bot._isEnding) {
             console.log(`⏰ ${bot.username} scheduled: ${schedule.action}`);
             this.executeScheduledAction(bot, schedule.action);
           }
         });
+        
+        botInfo.schedules.push(job);
       } catch (error) {
         console.error(`❌ Failed to schedule for ${bot.username}:`, error.message);
       }
@@ -390,8 +283,11 @@ class BehaviorEngine {
   
   startBehaviorLoop(bot, botType) {
     // Continuous behavior adjustment loop
-    setInterval(() => {
-      if (!bot.entity || !bot.behaviorPattern) return;
+    const loopInterval = setInterval(() => {
+      if (!bot.entity || bot._isEnding) {
+        clearInterval(loopInterval);
+        return;
+      }
       
       // Check for behavior changes based on context
       this.adjustBehaviors(bot);
@@ -402,7 +298,10 @@ class BehaviorEngine {
       // Learn from experience
       this.learnFromBehavior(bot);
       
-    }, 30000); // Every 30 seconds
+    }, 30000);
+    
+    // Store interval for cleanup
+    bot.behaviorLoopInterval = loopInterval;
   }
   
   adjustBehaviors(bot) {
@@ -447,7 +346,9 @@ class BehaviorEngine {
       case 'social_mode':
         this.executeSocialMode(bot);
         break;
-      // Add more behaviors...
+      default:
+        // Generic behavior execution
+        this.executeGenericBehavior(bot, behavior.action);
     }
     
     // Mark as executed
@@ -488,7 +389,6 @@ class BehaviorEngine {
     // Learn which behaviors work in which contexts
     if (successful.length > 5) {
       const commonBehaviors = this.findCommonBehaviors(successful);
-      console.log(`🧠 ${bot.username} learned successful behaviors:`, commonBehaviors);
       
       // Reinforce successful behaviors
       commonBehaviors.forEach(behavior => {
@@ -498,7 +398,6 @@ class BehaviorEngine {
     
     if (unsuccessful.length > 5) {
       const commonBehaviors = this.findCommonBehaviors(unsuccessful);
-      console.log(`🧠 ${bot.username} learned unsuccessful behaviors:`, commonBehaviors);
       
       // Avoid unsuccessful behaviors
       commonBehaviors.forEach(behavior => {
@@ -512,15 +411,7 @@ class BehaviorEngine {
     console.log(`🎭 ${bot.username} conducting morning inspection`);
     bot.chat("Good morning! Time to check on things...");
     
-    // Check builds, farms, animals, etc.
-    const checks = [
-      'buildings',
-      'farms',
-      'animals',
-      'storage',
-      'defenses'
-    ];
-    
+    const checks = ['buildings', 'farms', 'animals', 'storage', 'defenses'];
     const check = checks[Math.floor(Math.random() * checks.length)];
     bot.chat(`Checking the ${check}...`);
   }
@@ -529,10 +420,8 @@ class BehaviorEngine {
     console.log(`🎭 ${bot.username} starting afternoon building session`);
     bot.chat("Afternoon building time!");
     
-    // Start a building project
     const projects = ['expansion', 'renovation', 'new_room', 'decoration'];
     const project = projects[Math.floor(Math.random() * projects.length)];
-    
     bot.chat(`Working on ${project} project this afternoon.`);
   }
   
@@ -542,20 +431,13 @@ class BehaviorEngine {
     if (bot.health < 10) {
       bot.chat("I need to get to safety!");
       
-      // Find nearest safe location
-      const safePlaces = bot.findBlocks({
-        point: bot.entity.position,
-        maxDistance: 30,
-        matching: (block) => 
-          ['bed', 'house', 'shelter', 'village'].some(place => 
-            this.isSafePlace(block, place)
-          ),
-        count: 5
-      });
-      
-      if (safePlaces.length > 0) {
-        const target = safePlaces[0];
-        bot.pathfinder.goto(new goals.GoalBlock(target.x, target.y, target.z));
+      // Simple safety logic - move away from current position
+      const safePos = bot.entity.position.offset(10, 0, 10);
+      try {
+        const goals = require('mineflayer-pathfinder').goals;
+        bot.pathfinder.goto(new goals.GoalNear(safePos.x, safePos.y, safePos.z, 3));
+      } catch (error) {
+        // Ignore errors
       }
     }
   }
@@ -563,9 +445,10 @@ class BehaviorEngine {
   executeFindBed(bot) {
     console.log(`🎭 ${bot.username} looking for bed`);
     
-    if (bot.time.timeOfDay % 24000 > 13000) { // Night time
+    if (bot.time && bot.time.timeOfDay % 24000 > 13000) {
       bot.chat("Getting tired... should find a bed.");
       
+      // Simple bed finding logic
       const beds = bot.findBlocks({
         point: bot.entity.position,
         maxDistance: 50,
@@ -575,17 +458,12 @@ class BehaviorEngine {
       
       if (beds.length > 0) {
         const bed = beds[0];
-        bot.pathfinder.goto(new goals.GoalBlock(bed.x, bed.y, bed.z));
-        
-        setTimeout(() => {
-          if (bot.entity) {
-            const bedBlock = bot.blockAt(bed);
-            if (bedBlock) {
-              bot.sleep(bedBlock);
-              bot.chat("Good night!");
-            }
-          }
-        }, 3000);
+        try {
+          const goals = require('mineflayer-pathfinder').goals;
+          bot.pathfinder.goto(new goals.GoalNear(bed.x, bed.y, bed.z, 1));
+        } catch (error) {
+          // Ignore errors
+        }
       }
     }
   }
@@ -601,8 +479,29 @@ class BehaviorEngine {
     }
   }
   
+  executeGenericBehavior(bot, action) {
+    console.log(`🎭 ${bot.username} executing: ${action}`);
+    
+    // Map action to simple behavior
+    const actionMap = {
+      'measure_twice': () => bot.chat("Let me measure this properly..."),
+      'gather_before_build': () => bot.chat("Need to gather materials first."),
+      'take_notes': () => bot.chat("Taking notes on this area..."),
+      'safety_first': () => bot.chat("Safety first! Checking for dangers..."),
+      'greet_everyone': () => {
+        const players = Object.keys(bot.players).filter(name => name !== bot.username);
+        if (players.length > 0) {
+          bot.chat("Hello everyone!");
+        }
+      }
+    };
+    
+    if (actionMap[action]) {
+      actionMap[action]();
+    }
+  }
+  
   executeScheduledAction(bot, action) {
-    // Map action names to functions
     const actionMap = {
       'morning_inspection': () => this.executeMorningInspection(bot),
       'afternoon_build': () => this.executeAfternoonBuild(bot),
@@ -623,11 +522,41 @@ class BehaviorEngine {
     }
   }
   
+  executeBehavior(bot, action) {
+    // Execute a specific behavior
+    console.log(`🎭 ${bot.username} executing behavior: ${action}`);
+    
+    // Simple behavior mapping
+    switch (action) {
+      case 'login':
+        bot.chat("Logging in... ready to play!");
+        break;
+      case 'check_inventory':
+        bot.chat("Checking my inventory...");
+        break;
+      case 'light_farming':
+        bot.chat("Time for some light farming.");
+        break;
+      case 'group_activity':
+        bot.chat("Anyone want to do something together?");
+        break;
+      case 'major_project':
+        bot.chat("Starting a major project today!");
+        break;
+      case 'extended_play':
+        bot.chat("Got time for extended play session!");
+        break;
+      default:
+        // Generic action
+        this.executeGenericBehavior(bot, action);
+    }
+  }
+  
   // Helper methods
   assessContext(bot) {
     return {
-      health: bot.health,
-      food: bot.food,
+      health: bot.health || 20,
+      food: bot.food || 20,
       timeOfDay: this.getTimeOfDay(bot),
       nearbyPlayers: Object.keys(bot.players).length - 1,
       location: this.getLocationType(bot),
@@ -648,24 +577,29 @@ class BehaviorEngine {
   }
   
   getLocationType(bot) {
-    const nearbyBlocks = this.scanNearbyBlocks(bot, 10);
+    if (!bot.entity) return 'unknown';
     
-    if (nearbyBlocks.some(b => b.name.includes('bed'))) return 'home';
-    if (nearbyBlocks.some(b => b.name.includes('furnace'))) return 'workshop';
-    if (nearbyBlocks.some(b => b.name.includes('chest'))) return 'storage';
-    if (nearbyBlocks.some(b => b.name.includes('farmland'))) return 'farm';
-    if (nearbyBlocks.some(b => b.name.includes('ore'))) return 'mine';
+    // Simple location detection
+    const block = bot.blockAt(bot.entity.position);
+    if (block) {
+      const name = block.name.toLowerCase();
+      if (name.includes('bed')) return 'home';
+      if (name.includes('furnace')) return 'workshop';
+      if (name.includes('chest')) return 'storage';
+      if (name.includes('farm')) return 'farm';
+      if (name.includes('ore')) return 'mine';
+    }
     
     return 'wilderness';
   }
   
   assessMood(bot) {
     const factors = {
-      health: bot.health / 20,
-      food: bot.food / 20,
-      social: Math.min(1, Object.keys(bot.players).length / 5),
+      health: (bot.health || 20) / 20,
+      food: (bot.food || 20) / 20,
+      social: Math.min(1, (Object.keys(bot.players).length - 1) / 5),
       safety: this.assessSafety(bot),
-      progress: this.assessProgress(bot)
+      progress: 0.5 // Default progress
     };
     
     const moodScore = Object.values(factors).reduce((a, b) => a + b, 0) / Object.keys(factors).length;
@@ -678,6 +612,8 @@ class BehaviorEngine {
   }
   
   assessSafety(bot) {
+    if (!bot.entities) return 1;
+    
     const hostile = Object.values(bot.entities).filter(e => 
       e.displayName && 
       ['Zombie', 'Skeleton', 'Creeper', 'Spider'].some(name => e.displayName.includes(name))
@@ -686,69 +622,17 @@ class BehaviorEngine {
     return Math.max(0, 1 - (hostile.length / 5));
   }
   
-  assessProgress(bot) {
-    // Measure progress toward goals
-    if (!bot.goals) return 0.5;
-    
-    const completed = bot.goals.filter(g => g.completed).length;
-    const total = bot.goals.length;
-    
-    return total > 0 ? completed / total : 0.5;
-  }
-  
   assessSuccess(bot) {
-    // Assess how successful current behaviors are
-    const context = this.assessContext(bot);
-    
+    // Simple success assessment based on health and activity
     let success = 0.5;
     
-    // Health improvement is good
-    if (context.health > 15) success += 0.2;
-    if (context.health < 5) success -= 0.3;
+    if (bot.health > 15) success += 0.2;
+    if (bot.health < 5) success -= 0.3;
     
-    // Social interaction is good for socializers
-    if (bot.personalityTraits && bot.personalityTraits.includes('social')) {
-      if (context.nearbyPlayers > 0) success += 0.1;
-    }
-    
-    // Safety is good for everyone
-    if (context.location === 'home' || context.location === 'safe') success += 0.2;
+    if (bot.food > 15) success += 0.1;
+    if (bot.food < 5) success -= 0.2;
     
     return Math.max(0, Math.min(1, success));
-  }
-  
-  scanNearbyBlocks(bot, radius) {
-    const blocks = [];
-    const center = bot.entity.position.floored();
-    
-    for (let x = -radius; x <= radius; x++) {
-      for (let y = -radius; y <= radius; y++) {
-        for (let z = -radius; z <= radius; z++) {
-          const pos = center.offset(x, y, z);
-          const block = bot.blockAt(pos);
-          if (block && block.name !== 'air') {
-            blocks.push(block);
-          }
-        }
-      }
-    }
-    
-    return blocks;
-  }
-  
-  isSafePlace(block, type) {
-    switch (type) {
-      case 'house':
-        return ['door', 'window', 'roof'].some(part => 
-          block.name.toLowerCase().includes(part)
-        );
-      case 'shelter':
-        return ['wall', 'roof', 'shelter'].some(part =>
-          block.name.toLowerCase().includes(part)
-        );
-      default:
-        return block.name.toLowerCase().includes(type);
-    }
   }
   
   addBotBehavior(bot, action) {
@@ -796,7 +680,7 @@ class BehaviorEngine {
             b.action !== `temp_${action}`
           );
         }
-      }, 300000); // Remove after 5 minutes
+      }, 300000);
     }
   }
   
@@ -805,13 +689,12 @@ class BehaviorEngine {
     
     const now = Date.now();
     
-    // Remove old temporary behaviors
     bot.currentBehaviors = bot.currentBehaviors.filter(behavior => {
       if (behavior.action.startsWith('temp_')) {
-        return now - (behavior.added || now) < 300000; // 5 minutes
+        return now - (behavior.added || now) < 300000;
       }
       if (behavior.emergency) {
-        return now - (behavior.added || now) < 60000; // 1 minute for emergencies
+        return now - (behavior.added || now) < 60000;
       }
       return true;
     });
@@ -826,7 +709,6 @@ class BehaviorEngine {
       });
     });
     
-    // Return behaviors that appear in at least 50% of entries
     const threshold = history.length * 0.5;
     return Object.entries(behaviorCount)
       .filter(([_, count]) => count >= threshold)
@@ -834,39 +716,53 @@ class BehaviorEngine {
   }
   
   reinforceBehavior(bot, behavior) {
-    // Increase probability of successful behavior
     const pattern = bot.behaviorPattern;
     if (pattern && pattern.behaviors) {
       const behaviorObj = pattern.behaviors.find(b => b.action === behavior);
       if (behaviorObj) {
         behaviorObj.probability = Math.min(0.95, behaviorObj.probability + 0.05);
+        console.log(`🎭 Reinforced behavior ${behavior} for ${bot.username}`);
       }
     }
   }
   
   avoidBehavior(bot, behavior) {
-    // Decrease probability of unsuccessful behavior
     const pattern = bot.behaviorPattern;
     if (pattern && pattern.behaviors) {
       const behaviorObj = pattern.behaviors.find(b => b.action === behavior);
       if (behaviorObj) {
         behaviorObj.probability = Math.max(0.05, behaviorObj.probability - 0.05);
+        console.log(`🎭 Reduced probability of ${behavior} for ${bot.username}`);
       }
     }
   }
   
-  executeBehavior(action) {
-    // Global behavior execution (affects all bots)
-    console.log(`🎭 Executing global behavior: ${action}`);
+  stopBotBehavior(bot) {
+    const username = bot.username;
+    const botInfo = this.activeBehaviors.get(username);
     
-    // This would broadcast to all bots
-    // Implementation depends on bot manager architecture
-  }
-  
-  async savePatterns() {
-    const patterns = Object.fromEntries(this.behaviors);
-    await fs.ensureDir(path.dirname(this.patternsFile));
-    await fs.writeJson(this.patternsFile, patterns, { spaces: 2 });
+    if (!botInfo) return false;
+    
+    // Stop behavior loop
+    if (bot.behaviorLoopInterval) {
+      clearInterval(bot.behaviorLoopInterval);
+      delete bot.behaviorLoopInterval;
+    }
+    
+    // Stop scheduled jobs
+    botInfo.schedules.forEach(job => job.stop());
+    
+    // Remove from active behaviors
+    this.activeBehaviors.delete(username);
+    
+    // Clean up bot properties
+    delete bot.behaviorPattern;
+    delete bot.personalityTraits;
+    delete bot.currentBehaviors;
+    delete bot.behaviorHistory;
+    
+    console.log(`🎭 Stopped behavior engine for ${username}`);
+    return true;
   }
   
   logPatternActivation(patternName, pattern) {
@@ -877,7 +773,15 @@ class BehaviorEngine {
       behaviors: pattern.behaviors.map(b => b.action)
     };
     
-    // Append to log file
+    // Save to learning data
+    this.learningData.push(logEntry);
+    
+    // Keep data manageable
+    if (this.learningData.length > 1000) {
+      this.learningData = this.learningData.slice(-500);
+    }
+    
+    // Log to file
     const logFile = path.join(__dirname, 'logs', 'behavior-activations.jsonl');
     fs.appendFileSync(logFile, JSON.stringify(logEntry) + '\n');
   }
@@ -887,33 +791,52 @@ class BehaviorEngine {
     const stats = {
       totalPatterns: this.behaviors.size,
       patternsByType: {},
-      activeSchedules: 0,
-      recentActivations: 0
+      activeBehaviors: this.activeBehaviors.size,
+      learningData: this.learningData.length
     };
     
     for (const [_, pattern] of this.behaviors) {
       stats.patternsByType[pattern.type] = (stats.patternsByType[pattern.type] || 0) + 1;
     }
     
-    // Count scheduled patterns
-    for (const [name, pattern] of this.behaviors) {
-      if (pattern.schedule) {
-        stats.activeSchedules++;
-      }
-    }
-    
     return stats;
   }
   
-  getBotBehaviorStats(botName) {
-    // This would get stats for a specific bot
+  getBotBehaviorStats(username) {
+    const botInfo = this.activeBehaviors.get(username);
+    if (!botInfo) return null;
+    
+    const bot = botInfo.bot;
+    
     return {
-      currentBehaviors: [],
-      personalityTraits: [],
-      behaviorHistory: 0,
-      successRate: 0.5
+      username: username,
+      type: botInfo.type,
+      personalityTraits: bot.personalityTraits || [],
+      currentBehaviors: bot.currentBehaviors ? bot.currentBehaviors.map(b => b.action) : [],
+      behaviorHistory: bot.behaviorHistory ? bot.behaviorHistory.length : 0,
+      schedules: botInfo.schedules.length
+    };
+  }
+  
+  getStatus() {
+    return {
+      patterns: this.behaviors.size,
+      activeBots: this.activeBehaviors.size,
+      schedules: Array.from(this.behaviors.values()).filter(p => p.schedule).length,
+      learningData: this.learningData.length
     };
   }
 }
 
-module.exports = new BehaviorEngine();
+// Create singleton instance
+const behaviorEngine = new BehaviorEngine();
+
+// Export for use in other modules
+module.exports = behaviorEngine;
+
+// Auto-load if this module is run directly
+if (require.main === module) {
+  console.log('🚀 Starting Behavior Engine...');
+  console.log('✅ Behavior Engine ready');
+  console.log('📊 Loading behavior patterns...');
+}
