@@ -6,7 +6,7 @@ class MultiPlayerSim {
     this.groups = new Map();
     this.relationships = new Map();
     this.events = [];
-    this.eventsFile = path.join(__dirname, 'logs', 'multiplayer-events.json');
+    this.simulatedPlayers = new Map();
     
     this.groupTypes = {
       building_crew: { size: 2, activities: ['build', 'decorate', 'plan'] },
@@ -14,6 +14,26 @@ class MultiPlayerSim {
       exploration_team: { size: 2, activities: ['explore', 'map', 'discover'] },
       social_circle: { size: 4, activities: ['chat', 'trade', 'organize'] }
     };
+    
+    this.loadEvents();
+  }
+  
+  async loadEvents() {
+    try {
+      const eventsFile = path.join(__dirname, 'logs', 'multiplayer-events.json');
+      if (await fs.pathExists(eventsFile)) {
+        this.events = await fs.readJson(eventsFile);
+        console.log(`✅ Loaded ${this.events.length} multiplayer events`);
+      }
+    } catch (error) {
+      console.error('❌ Failed to load multiplayer events:', error.message);
+    }
+  }
+  
+  async saveEvents() {
+    const eventsFile = path.join(__dirname, 'logs', 'multiplayer-events.json');
+    await fs.ensureDir(path.dirname(eventsFile));
+    await fs.writeJson(eventsFile, this.events, { spaces: 2 });
   }
   
   addBot(bot, type) {
@@ -29,29 +49,62 @@ class MultiPlayerSim {
       lastInteraction: Date.now()
     };
     
+    // Store reference
+    this.simulatedPlayers.set(bot.username, {
+      bot: bot,
+      type: type,
+      socialState: bot.socialState
+    });
+    
     // Try to form or join a group
     this.formOrJoinGroup(bot, type);
     
     // Start social activities
     this.startSocialActivities(bot, type);
+    
+    // Record event
+    this.recordEvent({
+      type: 'player_joined',
+      player: bot.username,
+      playerType: type,
+      timestamp: new Date().toISOString()
+    });
+    
+    return true;
   }
   
   removeBot(bot) {
+    if (!bot.username || !this.simulatedPlayers.has(bot.username)) return false;
+    
+    const username = bot.username;
+    
+    // Remove from group
     if (bot.socialState && bot.socialState.group) {
       const group = this.groups.get(bot.socialState.group);
       if (group) {
-        group.members = group.members.filter(m => m !== bot.username);
+        group.members = group.members.filter(m => m !== username);
         
         if (group.members.length === 0) {
           this.groups.delete(bot.socialState.group);
         } else {
           // Notify remaining members
-          this.notifyGroupChange(group, `${bot.username} left the group`);
+          this.notifyGroupChange(group, `${username} left the group`);
         }
       }
     }
     
-    console.log(`👥 Removed ${bot.username} from multiplayer simulation`);
+    // Remove from simulated players
+    this.simulatedPlayers.delete(username);
+    
+    // Record event
+    this.recordEvent({
+      type: 'player_left',
+      player: username,
+      timestamp: new Date().toISOString()
+    });
+    
+    console.log(`👥 Removed ${username} from multiplayer simulation`);
+    return true;
   }
   
   formOrJoinGroup(bot, type) {
@@ -79,7 +132,7 @@ class MultiPlayerSim {
       const groupId = `${type}_${Date.now()}`;
       const group = {
         id: groupId,
-        type,
+        type: type,
         members: [bot.username],
         leader: bot.username,
         activity: 'forming',
@@ -116,7 +169,7 @@ class MultiPlayerSim {
         await this.takeSocialBreak(bot);
       }
       
-    }, 30000); // Every 30 seconds
+    }, 30000);
     
     // Random social interactions
     setInterval(async () => {
@@ -126,7 +179,7 @@ class MultiPlayerSim {
         await this.randomSocialInteraction(bot, type);
       }
       
-    }, 60000 + Math.random() * 120000); // 1-3 minutes
+    }, 60000 + Math.random() * 120000);
   }
   
   async coordinateWithGroup(bot, group) {
@@ -169,8 +222,17 @@ class MultiPlayerSim {
     // Update relationships
     group.members.forEach(member => {
       if (member !== bot.username) {
-        this.updateRelationship(bot.username, member, 0.1); // Positive interaction
+        this.updateRelationship(bot.username, member, 0.1);
       }
+    });
+    
+    // Record event
+    this.recordEvent({
+      type: 'group_coordination',
+      group: group.id,
+      activity: activity,
+      initiator: bot.username,
+      timestamp: new Date().toISOString()
     });
   }
   
@@ -184,18 +246,6 @@ class MultiPlayerSim {
       groupObj.activity = 'building';
       groupObj.project = this.getBuildingProject();
     }
-    
-    // Move to building location if not already there
-    if (!bot.socialState.buildLocation) {
-      bot.socialState.buildLocation = bot.entity.position.plus({
-        x: (Math.random() - 0.5) * 20,
-        y: 0,
-        z: (Math.random() - 0.5) * 20
-      });
-    }
-    
-    // Start building behavior
-    bot.setControlState('sprint', true);
     
     // Simulate building coordination
     setTimeout(() => {
@@ -386,14 +436,13 @@ class MultiPlayerSim {
   }
   
   notifyGroupChange(group, message) {
-    // In a real implementation, this would notify all group members
     console.log(`👥 Group ${group.id}: ${message}`);
     
     // Record event
     this.recordEvent({
       type: 'group_change',
       group: group.id,
-      message,
+      message: message,
       time: Date.now(),
       members: group.members
     });
@@ -429,7 +478,10 @@ class MultiPlayerSim {
   }
   
   recordInteraction(interaction) {
-    this.events.push(interaction);
+    this.events.push({
+      ...interaction,
+      timestamp: new Date().toISOString()
+    });
     
     // Keep only recent events
     if (this.events.length > 1000) {
@@ -443,7 +495,10 @@ class MultiPlayerSim {
   }
   
   recordEvent(event) {
-    this.events.push(event);
+    this.events.push({
+      ...event,
+      timestamp: new Date().toISOString()
+    });
     
     // Keep only recent events
     if (this.events.length > 1000) {
@@ -451,12 +506,6 @@ class MultiPlayerSim {
     }
   }
   
-  async saveEvents() {
-    await fs.ensureDir(path.dirname(this.eventsFile));
-    await fs.writeJson(this.eventsFile, this.events, { spaces: 2 });
-  }
-  
-  // Helper methods
   getBuildingProject() {
     const projects = [
       'castle', 'farm', 'bridge', 'watchtower', 'market', 'library',
@@ -467,6 +516,28 @@ class MultiPlayerSim {
   }
   
   // Public API
+  getSimulatedPlayers() {
+    return Array.from(this.simulatedPlayers.values()).map(info => ({
+      username: info.bot.username,
+      type: info.type,
+      group: info.bot.socialState?.group || null,
+      reputation: info.bot.socialState?.reputation || 50,
+      socialEnergy: info.bot.socialState?.socialEnergy || 100
+    }));
+  }
+  
+  getGroups() {
+    return Array.from(this.groups.values()).map(group => ({
+      id: group.id,
+      type: group.type,
+      members: group.members,
+      leader: group.leader,
+      activity: group.activity,
+      created: new Date(group.created).toISOString(),
+      recentActivities: group.activities.slice(-5)
+    }));
+  }
+  
   getGroupStats() {
     const stats = {
       totalGroups: this.groups.size,
@@ -492,10 +563,10 @@ class MultiPlayerSim {
     const stats = {
       totalRelationships: this.relationships.size,
       relationshipLevels: {
-        hostile: 0, // 0-30
-        neutral: 0, // 31-70
-        friendly: 0, // 71-100
-        best_friends: 0 // 90-100
+        hostile: 0,
+        neutral: 0,
+        friendly: 0,
+        best_friends: 0
       },
       averageRelationship: 0
     };
@@ -520,7 +591,6 @@ class MultiPlayerSim {
     const nodes = new Set();
     const links = [];
     
-    // Add all players
     for (const [key, rel] of this.relationships) {
       const [player1, player2] = key.split('-');
       nodes.add(player1);
@@ -536,9 +606,34 @@ class MultiPlayerSim {
     
     return {
       nodes: Array.from(nodes).map(name => ({ id: name, group: 1 })),
-      links
+      links: links
+    };
+  }
+  
+  getRecentEvents(limit = 10) {
+    return this.events.slice(-limit).reverse();
+  }
+  
+  getStatus() {
+    return {
+      simulatedPlayers: this.simulatedPlayers.size,
+      groups: this.groups.size,
+      relationships: this.relationships.size,
+      events: this.events.length,
+      groupTypes: Object.keys(this.groupTypes)
     };
   }
 }
 
-module.exports = new MultiPlayerSim();
+// Create singleton instance
+const multiPlayerSim = new MultiPlayerSim();
+
+// Export for use in other modules
+module.exports = multiPlayerSim;
+
+// Auto-load if this module is run directly
+if (require.main === module) {
+  console.log('🚀 Starting Multi-Player Simulation...');
+  console.log('✅ Multi-Player Simulation ready');
+  console.log(`📊 Group types: ${Object.keys(multiPlayerSim.groupTypes).join(', ')}`);
+}
