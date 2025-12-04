@@ -1,33 +1,27 @@
 {
   "name": "minecraft-ultimate-bot-system",
   "version": "7.0.0",
-  "description": "Ultimate Minecraft bot system with proxies, accounts, AI, and anti-detection",
+  "description": "Ultimate Minecraft bot system",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "setup": "node setup.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "test": "node bot.js"
   },
-  "keywords": [
-    "minecraft",
-    "bot",
-    "proxy",
-    "ai",
-    "anti-detection",
-    "aternos"
-  ],
+  "keywords": ["minecraft", "bot", "aternos"],
   "author": "Ultimate Bot System",
   "license": "MIT",
   "dependencies": {
-    "express": "^5.1.0",
-    "ws": "^8.16.0",
-    "mineflayer": "^4.25.0",
-    "mineflayer-pathfinder": "^2.4.5",
-    "vec3": "^0.1.10",
+    "express": "^4.18.2",
+    "ws": "^8.14.2",
+    "mineflayer": "^4.10.0",
+    "mineflayer-pathfinder": "^2.4.4",
+    "vec3": "^0.1.8",
     "fs-extra": "^11.1.1",
     "dotenv": "^16.3.1"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=16.0.0"
   }
 }
