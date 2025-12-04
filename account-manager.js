@@ -1,71 +1,71 @@
 const fs = require('fs-extra');
 const path = require('path');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
 
 class AccountManager {
   constructor() {
     this.accounts = [];
-    this.currentIndex = 0;
-    this.accountsFile = path.join(__dirname, 'config', 'accounts.json');
-    this.activityFile = path.join(__dirname, 'logs', 'account-activity.json');
+    this.activeAccount = null;
+    this.rotationInterval = null;
+    this.activityLog = [];
     
-    this.activity = {
-      logins: [],
-      rotations: 0,
-      totalPlaytime: 0,
-      serverCreations: 0
+    this.config = {
+      rotationInterval: 60 * 60 * 1000, // 1 hour
+      minAccountAge: 30, // days
+      maxAccounts: 10
     };
+    
+    this.loadAccounts();
   }
   
   async loadAccounts() {
     try {
-      if (await fs.pathExists(this.accountsFile)) {
-        this.accounts = await fs.readJson(this.accountsFile);
+      const accountFile = path.join(__dirname, 'config', 'accounts.json');
+      if (await fs.pathExists(accountFile)) {
+        this.accounts = await fs.readJson(accountFile);
         console.log(`✅ Loaded ${this.accounts.length} accounts from file`);
       } else {
-        await this.generateAccounts();
-        await this.saveAccounts();
+        await this.generateDefaultAccounts();
       }
       
-      // Load activity
-      if (await fs.pathExists(this.activityFile)) {
-        this.activity = await fs.readJson(this.activityFile);
+      // Load activity log
+      const logFile = path.join(__dirname, 'logs', 'account-activity.json');
+      if (await fs.pathExists(logFile)) {
+        this.activityLog = await fs.readJson(logFile);
       }
       
     } catch (error) {
       console.error('❌ Failed to load accounts:', error.message);
-      await this.generateAccounts();
+      await this.generateDefaultAccounts();
     }
   }
   
-  async generateAccounts() {
-    console.log('🔄 Generating 10+ Aternos accounts...');
+  async generateDefaultAccounts(count = 10) {
+    console.log(`🔄 Generating ${count} default accounts...`);
     
     const emailProviders = ['gmail.com', 'outlook.com', 'yahoo.com', 'protonmail.com', 'icloud.com'];
     const nameParts = [
-      'game', 'craft', 'mine', 'build', 'explore', 'adventure', 'survival', 'creative',
-      'player', 'gamer', 'bot', 'auto', 'smart', 'neural', 'ai', 'digital', 'virtual'
+      'game', 'craft', 'mine', 'build', 'explore', 'adventure', 
+      'survival', 'creative', 'player', 'gamer', 'bot', 'auto'
     ];
     
-    for (let i = 0; i < 12; i++) { // 12 accounts for variety
+    for (let i = 0; i < count; i++) {
       const username = this.generateUsername(nameParts);
-      const email = this.generateEmail(username, emailProviders);
-      const ageDays = 30 + Math.floor(Math.random() * 335); // 30-365 days old
-      const creationDate = new Date(Date.now() - ageDays * 24 * 60 * 60 * 1000);
+      const provider = emailProviders[Math.floor(Math.random() * emailProviders.length)];
+      const ageDays = 30 + Math.floor(Math.random() * 335); // 30-365 days
       
       this.accounts.push({
-        id: uuidv4(),
-        username,
-        email,
+        id: crypto.randomBytes(8).toString('hex'),
+        username: username,
+        email: `${username}@${provider}`,
         password: this.generatePassword(),
-        creationDate: creationDate.toISOString(),
-        ageDays,
+        creationDate: new Date(Date.now() - ageDays * 24 * 60 * 60 * 1000).toISOString(),
+        ageDays: ageDays,
         status: 'active',
         priority: Math.random() > 0.7 ? 'premium' : 'free',
         servers: this.generateServers(),
         lastLogin: null,
-        totalPlaytime: Math.floor(Math.random() * 1000) * 60, // minutes
+        totalPlaytime: Math.floor(Math.random() * 1000) * 60,
         loginCount: Math.floor(Math.random() * 100),
         security: {
           has2FA: Math.random() > 0.8,
@@ -77,6 +77,7 @@ class AccountManager {
       });
     }
     
+    await this.saveAccounts();
     console.log(`✅ Generated ${this.accounts.length} accounts`);
   }
   
@@ -85,24 +86,7 @@ class AccountManager {
     const part2 = parts[Math.floor(Math.random() * parts.length)];
     const number = Math.floor(Math.random() * 10000);
     
-    // Sometimes add extra parts
-    if (Math.random() > 0.5) {
-      const part3 = parts[Math.floor(Math.random() * parts.length)];
-      return `${part1}${part2}${part3}${number}`.toLowerCase();
-    }
-    
     return `${part1}${part2}${number}`.toLowerCase();
-  }
-  
-  generateEmail(username, providers) {
-    const provider = providers[Math.floor(Math.random() * providers.length)];
-    
-    // Add some variations
-    const variations = ['', '.', '_', '-'];
-    const variation = variations[Math.floor(Math.random() * variations.length)];
-    const extraNumber = Math.random() > 0.5 ? Math.floor(Math.random() * 100) : '';
-    
-    return `${username}${variation}${extraNumber}@${provider}`.toLowerCase();
   }
   
   generatePassword() {
@@ -116,31 +100,30 @@ class AccountManager {
     
     // Ensure complexity
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])/.test(password)) {
-      return this.generatePassword(); // Retry
+      return this.generatePassword();
     }
     
     return password;
   }
   
   generateServers() {
-    const serverCount = Math.floor(Math.random() * 4) + 1; // 1-4 servers
+    const serverCount = Math.floor(Math.random() * 4) + 1;
     const servers = [];
-    const serverTypes = ['Survival', 'Creative', 'Modded', 'Minigames', 'Skyblock', 'OneBlock'];
-    const versions = ['1.20.4', '1.21.0', '1.21.1', '1.21.10', '1.20.1', '1.19.4'];
+    const serverTypes = ['Survival', 'Creative', 'Modded', 'Minigames', 'Skyblock'];
+    const versions = ['1.20.4', '1.21.0', '1.21.1', '1.21.10', '1.20.1'];
     
     for (let i = 0; i < serverCount; i++) {
       const type = serverTypes[Math.floor(Math.random() * serverTypes.length)];
       const version = versions[Math.floor(Math.random() * versions.length)];
       const daysAgo = Math.floor(Math.random() * 30);
-      const lastOnline = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
       
       servers.push({
         name: `${type} Server ${i + 1}`,
-        type,
-        version,
+        type: type,
+        version: version,
         created: new Date(Date.now() - (30 + Math.random() * 335) * 24 * 60 * 60 * 1000).toISOString(),
-        lastOnline: lastOnline.toISOString(),
-        playtime: Math.floor(Math.random() * 5000) * 60, // minutes
+        lastOnline: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString(),
+        playtime: Math.floor(Math.random() * 5000) * 60,
         slots: [2, 4, 6, 8, 10][Math.floor(Math.random() * 5)],
         hasBackups: Math.random() > 0.3,
         hasDynamicIP: Math.random() > 0.5,
@@ -164,10 +147,10 @@ class AccountManager {
     };
     
     return {
-      pattern,
+      pattern: pattern,
       preferredHours: hours[pattern],
-      weekdays: Math.random() * 10 + 5, // hours per week
-      weekends: Math.random() * 20 + 10 // hours per weekend
+      weekdays: Math.random() * 10 + 5,
+      weekends: Math.random() * 20 + 10
     };
   }
   
@@ -187,21 +170,28 @@ class AccountManager {
   }
   
   async getNextAccount() {
-    this.currentIndex = (this.currentIndex + 1) % this.accounts.length;
-    const account = this.accounts[this.currentIndex];
+    // Filter active accounts
+    const availableAccounts = this.accounts
+      .filter(acc => acc.status === 'active')
+      .sort((a, b) => {
+        // Sort by last login (oldest first)
+        return (a.lastLogin || 0) - (b.lastLogin || 0);
+      });
     
-    // Update activity
+    if (availableAccounts.length === 0) {
+      console.warn('⚠️ No available accounts, using fallback');
+      return this.createFallbackAccount();
+    }
+    
+    const account = availableAccounts[0];
     account.lastLogin = new Date().toISOString();
-    account.loginCount++;
-    this.activity.logins.push({
-      accountId: account.id,
-      timestamp: new Date().toISOString(),
-      bot: 'unknown'
-    });
-    this.activity.rotations++;
+    account.loginCount = (account.loginCount || 0) + 1;
+    this.activeAccount = account;
+    
+    // Log this activity
+    this.logActivity('login', account.id);
     
     await this.saveAccounts();
-    await this.saveActivity();
     
     return {
       username: account.username,
@@ -209,16 +199,28 @@ class AccountManager {
       age: `${account.ageDays} days`,
       priority: account.priority,
       servers: account.servers.length,
-      lastLogin: account.lastLogin
+      lastLogin: account.lastLogin,
+      playtime: account.totalPlaytime
+    };
+  }
+  
+  createFallbackAccount() {
+    const username = `fallback_${crypto.randomBytes(4).toString('hex')}`;
+    
+    return {
+      username: username,
+      email: `${username}@fallback.com`,
+      age: '1 day',
+      priority: 'free',
+      servers: 1,
+      lastLogin: new Date().toISOString(),
+      playtime: 0,
+      fallback: true
     };
   }
   
   async rotateAccounts() {
-    console.log('🔄 Rotating all accounts...');
-    
-    // Shuffle accounts
-    this.accounts = this.shuffleArray(this.accounts);
-    this.currentIndex = 0;
+    console.log('🔄 Rotating accounts...');
     
     // Update all last login times to simulate natural rotation
     const daysAgo = Math.floor(Math.random() * 7);
@@ -228,7 +230,11 @@ class AccountManager {
       account.lastLogin = lastLogin.toISOString();
     });
     
+    // Shuffle accounts
+    this.accounts = this.shuffleArray(this.accounts);
+    
     await this.saveAccounts();
+    this.logActivity('rotation', null);
     
     return {
       success: true,
@@ -265,14 +271,9 @@ class AccountManager {
     const activity = activities[Math.floor(Math.random() * activities.length)];
     
     // Log activity
-    this.activity.logins.push({
-      accountId,
-      activity,
-      timestamp: new Date().toISOString(),
-      details: `Simulated ${activity}`
-    });
+    this.logActivity(activity, accountId);
     
-    account.totalPlaytime += Math.floor(Math.random() * 60) + 10; // Add 10-70 minutes
+    account.totalPlaytime += Math.floor(Math.random() * 60) + 10;
     
     if (activity === 'installed_plugin') {
       account.servers.forEach(server => {
@@ -283,24 +284,119 @@ class AccountManager {
     }
     
     await this.saveAccounts();
-    await this.saveActivity();
     
     return { success: true, activity };
   }
   
-  async saveAccounts() {
-    await fs.ensureDir(path.dirname(this.accountsFile));
-    await fs.writeJson(this.accountsFile, this.accounts, { spaces: 2 });
+  logActivity(type, accountId, details = {}) {
+    const activity = {
+      type: type,
+      accountId: accountId,
+      timestamp: new Date().toISOString(),
+      details: details
+    };
+    
+    this.activityLog.push(activity);
+    
+    // Keep log manageable
+    if (this.activityLog.length > 1000) {
+      this.activityLog = this.activityLog.slice(-500);
+    }
+    
+    // Save to file periodically
+    if (this.activityLog.length % 100 === 0) {
+      this.saveActivityLog();
+    }
+    
+    return activity;
   }
   
-  async saveActivity() {
-    await fs.ensureDir(path.dirname(this.activityFile));
-    await fs.writeJson(this.activityFile, this.activity, { spaces: 2 });
+  startAutoRotation() {
+    if (this.rotationInterval) {
+      clearInterval(this.rotationInterval);
+    }
+    
+    this.rotationInterval = setInterval(async () => {
+      console.log('⏰ Auto-rotating accounts...');
+      await this.rotateAccounts();
+      
+      // Simulate some Aternos activity
+      if (this.activeAccount) {
+        await this.simulateAternosActivity(this.activeAccount.id);
+      }
+      
+    }, this.config.rotationInterval);
+    
+    console.log(`✅ Auto rotation started (every ${this.config.rotationInterval / 3600000} hours)`);
+  }
+  
+  stopAutoRotation() {
+    if (this.rotationInterval) {
+      clearInterval(this.rotationInterval);
+      this.rotationInterval = null;
+      console.log('⏹️ Auto rotation stopped');
+    }
+  }
+  
+  async addAccount(accountData) {
+    const newAccount = {
+      id: crypto.randomBytes(8).toString('hex'),
+      ...accountData,
+      creationDate: new Date().toISOString(),
+      ageDays: 1,
+      status: 'active',
+      lastLogin: null,
+      totalPlaytime: 0,
+      loginCount: 0,
+      servers: [],
+      security: {
+        has2FA: false,
+        verifiedEmail: true,
+        backupCodes: false
+      },
+      activityPattern: this.generateActivityPattern(),
+      notes: 'Manually added account'
+    };
+    
+    this.accounts.push(newAccount);
+    await this.saveAccounts();
+    
+    return {
+      success: true,
+      account: newAccount
+    };
+  }
+  
+  removeAccount(accountId) {
+    const initialLength = this.accounts.length;
+    this.accounts = this.accounts.filter(a => a.id !== accountId);
+    
+    return {
+      success: true,
+      removed: initialLength - this.accounts.length,
+      remaining: this.accounts.length
+    };
+  }
+  
+  async saveAccounts() {
+    const accountFile = path.join(__dirname, 'config', 'accounts.json');
+    await fs.ensureDir(path.dirname(accountFile));
+    await fs.writeJson(accountFile, this.accounts, { spaces: 2 });
+  }
+  
+  async saveActivityLog() {
+    const logFile = path.join(__dirname, 'logs', 'account-activity.json');
+    await fs.ensureDir(path.dirname(logFile));
+    await fs.writeJson(logFile, this.activityLog, { spaces: 2 });
   }
   
   // Public API
   getAccountCount() {
     return this.accounts.length;
+  }
+  
+  getActiveAccount() {
+    return this.activeAccount;
   }
   
   getAccountStats() {
@@ -324,9 +420,9 @@ class AccountManager {
     
     return {
       total: this.accounts.length,
-      byAge,
-      byPriority,
-      byActivity,
+      byAge: byAge,
+      byPriority: byPriority,
+      byActivity: byActivity,
       averageAge: Math.round(this.accounts.reduce((a, b) => a + b.ageDays, 0) / this.accounts.length),
       totalPlaytime: this.accounts.reduce((a, b) => a + b.totalPlaytime, 0),
       totalServers: this.accounts.reduce((a, b) => a + b.servers.length, 0),
@@ -352,6 +448,32 @@ class AccountManager {
       activityPattern: account.activityPattern
     };
   }
+  
+  getStatus() {
+    return {
+      active: this.rotationInterval !== null,
+      rotationInterval: this.config.rotationInterval,
+      activeAccount: this.activeAccount ? this.activeAccount.username : null,
+      totalAccounts: this.accounts.length,
+      activityLogSize: this.activityLog.length
+    };
+  }
 }
 
-module.exports = new AccountManager();
+// Create singleton instance
+const accountManager = new AccountManager();
+
+// Export for use in other modules
+module.exports = accountManager;
+
+// Auto-start if this module is run directly
+if (require.main === module) {
+  (async () => {
+    console.log('🚀 Starting account manager...');
+    await accountManager.loadAccounts();
+    accountManager.startAutoRotation();
+    
+    console.log('✅ Account manager ready');
+    console.log(`📊 ${accountManager.getAccountCount()} accounts loaded`);
+  })();
+}
