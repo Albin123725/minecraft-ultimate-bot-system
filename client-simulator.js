@@ -6,7 +6,7 @@ const UserAgent = require('user-agents');
 class ClientSimulator {
   constructor() {
     this.fingerprints = [];
-    this.fingerprintsFile = path.join(__dirname, 'config', 'fingerprints.json');
+    this.activeFingerprint = null;
     
     this.javaVersions = ['1.8.0_351', '11.0.20', '17.0.8', '21.0.1'];
     this.launchers = ['Official', 'MultiMC', 'GDLauncher', 'ATLauncher', 'PrismLauncher', 'TLauncher'];
@@ -18,10 +18,27 @@ class ClientSimulator {
       'Mizuno 16 Craft',
       'Custom Pack'
     ];
+    
+    this.loadFingerprints();
   }
   
-  async generateFingerprints(count = 50) {
-    console.log('🔄 Generating client fingerprints...');
+  async loadFingerprints() {
+    try {
+      const fingerprintFile = path.join(__dirname, 'config', 'fingerprints.json');
+      if (await fs.pathExists(fingerprintFile)) {
+        this.fingerprints = await fs.readJson(fingerprintFile);
+        console.log(`✅ Loaded ${this.fingerprints.length} fingerprints from file`);
+      } else {
+        await this.generateDefaultFingerprints();
+      }
+    } catch (error) {
+      console.error('❌ Failed to load fingerprints:', error.message);
+      await this.generateDefaultFingerprints();
+    }
+  }
+  
+  async generateDefaultFingerprints(count = 50) {
+    console.log(`🔄 Generating ${count} default fingerprints...`);
     
     for (let i = 0; i < count; i++) {
       const userAgent = new UserAgent();
@@ -31,28 +48,28 @@ class ClientSimulator {
         javaVersion: this.javaVersions[Math.floor(Math.random() * this.javaVersions.length)],
         launcher: this.launchers[Math.floor(Math.random() * this.launchers.length)],
         resourcePack: this.resourcePacks[Math.floor(Math.random() * this.resourcePacks.length)],
-        viewDistance: Math.floor(Math.random() * 8) + 4, // 4-12
-        simulationDistance: Math.floor(Math.random() * 6) + 4, // 4-10
-        renderDistance: Math.floor(Math.random() * 8) + 4, // 4-12
-        maxFps: [60, 120, 144, 240, 0][Math.floor(Math.random() * 5)], // 0 = unlimited
+        viewDistance: Math.floor(Math.random() * 8) + 4,
+        simulationDistance: Math.floor(Math.random() * 6) + 4,
+        renderDistance: Math.floor(Math.random() * 8) + 4,
+        maxFps: [60, 120, 144, 240, 0][Math.floor(Math.random() * 5)],
         vsync: Math.random() > 0.5,
         mipmapLevels: Math.floor(Math.random() * 5),
         anisotropicFiltering: Math.floor(Math.random() * 17),
-        entityDistance: Math.floor(Math.random() * 101), // 0-100%
+        entityDistance: Math.floor(Math.random() * 101),
         particles: ['All', 'Decreased', 'Minimal'][Math.floor(Math.random() * 3)],
         clouds: Math.random() > 0.5,
         smoothLighting: [0, 1, 2][Math.floor(Math.random() * 3)],
-        biomeBlend: Math.floor(Math.random() * 8) * 5, // 0-35 in steps of 5
+        biomeBlend: Math.floor(Math.random() * 8) * 5,
         entityShadows: Math.random() > 0.5,
         attackIndicator: ['Crosshair', 'Hotbar'][Math.floor(Math.random() * 2)],
         autoJump: Math.random() > 0.7,
-        chatOpacity: Math.random() * 0.5 + 0.5, // 0.5-1.0
-        chatScale: Math.random() * 0.5 + 0.5, // 0.5-1.0
-        chatWidth: Math.random() * 0.3 + 0.7, // 0.7-1.0
-        chatHeightUnfocused: Math.floor(Math.random() * 7) + 4, // 4-10
-        chatHeightFocused: Math.floor(Math.random() * 11) + 10, // 10-20
-        fov: Math.random() * 20 + 70, // 70-90
-        gamma: Math.random() * 0.5 + 0.5, // 0.5-1.0
+        chatOpacity: Math.random() * 0.5 + 0.5,
+        chatScale: Math.random() * 0.5 + 0.5,
+        chatWidth: Math.random() * 0.3 + 0.7,
+        chatHeightUnfocused: Math.floor(Math.random() * 7) + 4,
+        chatHeightFocused: Math.floor(Math.random() * 11) + 10,
+        fov: Math.random() * 20 + 70,
+        gamma: Math.random() * 0.5 + 0.5,
         guiScale: ['Auto', 'Small', 'Normal', 'Large'][Math.floor(Math.random() * 4)],
         bobView: Math.random() > 0.3,
         attackCrosshair: Math.random() > 0.5,
@@ -70,11 +87,10 @@ class ClientSimulator {
     }
     
     await this.saveFingerprints();
-    console.log(`✅ Generated ${this.fingerprints.length} client fingerprints`);
+    console.log(`✅ Generated ${this.fingerprints.length} fingerprints`);
   }
   
   generateSimulatedIP(fingerprint) {
-    // Generate IP based on various factors to create consistency
     const ipHash = crypto.createHash('md5').update(fingerprint.id).digest('hex');
     const segments = [
       parseInt(ipHash.slice(0, 2), 16) % 254 + 1,
@@ -87,7 +103,6 @@ class ClientSimulator {
   }
   
   getGeoLocation(fingerprint) {
-    // Extract location from user agent or simulate
     const locations = [
       { country: 'US', city: 'New York', timezone: 'America/New_York' },
       { country: 'CA', city: 'Toronto', timezone: 'America/Toronto' },
@@ -113,12 +128,12 @@ class ClientSimulator {
     return types[Math.floor(Math.random() * types.length)];
   }
   
-  async getFingerprint(botType) {
+  async getFingerprint(botType = 'generic') {
     if (this.fingerprints.length === 0) {
-      await this.generateFingerprints();
+      await this.generateDefaultFingerprints();
     }
     
-    // Select fingerprint based on bot type
+    // Filter fingerprints based on bot type
     let filtered = this.fingerprints;
     
     // Builder bots might have better hardware
@@ -138,7 +153,9 @@ class ClientSimulator {
       filtered = this.fingerprints;
     }
     
+    // Select random fingerprint
     const fingerprint = filtered[Math.floor(Math.random() * filtered.length)];
+    this.activeFingerprint = fingerprint;
     
     // Add client name
     fingerprint.clientName = `${fingerprint.launcher} ${fingerprint.javaVersion}`;
@@ -170,7 +187,7 @@ class ClientSimulator {
     console.log('🔄 Rotating client fingerprints...');
     
     // Generate new fingerprints
-    await this.generateFingerprints(20);
+    await this.generateDefaultFingerprints(20);
     
     // Remove old fingerprints (keep last 50)
     if (this.fingerprints.length > 50) {
@@ -187,37 +204,9 @@ class ClientSimulator {
   }
   
   async saveFingerprints() {
-    await fs.ensureDir(path.dirname(this.fingerprintsFile));
-    await fs.writeJson(this.fingerprintsFile, this.fingerprints, { spaces: 2 });
-  }
-  
-  async loadFingerprints() {
-    if (await fs.pathExists(this.fingerprintsFile)) {
-      this.fingerprints = await fs.readJson(this.fingerprintsFile);
-      console.log(`✅ Loaded ${this.fingerprints.length} fingerprints`);
-    } else {
-      await this.generateFingerprints();
-    }
-  }
-  
-  // Public API
-  getFingerprintStats() {
-    const stats = {
-      total: this.fingerprints.length,
-      javaVersions: {},
-      launchers: {},
-      viewDistances: {},
-      connectionTypes: {}
-    };
-    
-    this.fingerprints.forEach(fp => {
-      stats.javaVersions[fp.javaVersion] = (stats.javaVersions[fp.javaVersion] || 0) + 1;
-      stats.launchers[fp.launcher] = (stats.launchers[fp.launcher] || 0) + 1;
-      stats.viewDistances[fp.viewDistance] = (stats.viewDistances[fp.viewDistance] || 0) + 1;
-      stats.connectionTypes[fp.connectionType.type] = (stats.connectionTypes[fp.connectionType.type] || 0) + 1;
-    });
-    
-    return stats;
+    const fingerprintFile = path.join(__dirname, 'config', 'fingerprints.json');
+    await fs.ensureDir(path.dirname(fingerprintFile));
+    await fs.writeJson(fingerprintFile, this.fingerprints, { spaces: 2 });
   }
   
   simulateClientUpdate(fingerprintId) {
@@ -242,6 +231,66 @@ class ClientSimulator {
       newValue: fingerprint[setting]
     };
   }
+  
+  // Public API
+  getFingerprintCount() {
+    return this.fingerprints.length;
+  }
+  
+  getActiveFingerprint() {
+    return this.activeFingerprint;
+  }
+  
+  getFingerprintStats() {
+    const stats = {
+      total: this.fingerprints.length,
+      javaVersions: {},
+      launchers: {},
+      viewDistances: {},
+      connectionTypes: {}
+    };
+    
+    this.fingerprints.forEach(fp => {
+      stats.javaVersions[fp.javaVersion] = (stats.javaVersions[fp.javaVersion] || 0) + 1;
+      stats.launchers[fp.launcher] = (stats.launchers[fp.launcher] || 0) + 1;
+      stats.viewDistances[fp.viewDistance] = (stats.viewDistances[fp.viewDistance] || 0) + 1;
+      stats.connectionTypes[fp.connectionType.type] = (stats.connectionTypes[fp.connectionType.type] || 0) + 1;
+    });
+    
+    return stats;
+  }
+  
+  getStatus() {
+    return {
+      totalFingerprints: this.fingerprints.length,
+      activeFingerprint: this.activeFingerprint ? this.activeFingerprint.id : null,
+      javaVersions: Array.from(new Set(this.fingerprints.map(f => f.javaVersion))),
+      launchers: Array.from(new Set(this.fingerprints.map(f => f.launcher)))
+    };
+  }
 }
 
-module.exports = new ClientSimulator();
+// Create singleton instance
+const clientSimulator = new ClientSimulator();
+
+// Export for use in other modules
+module.exports = clientSimulator;
+
+// Auto-load if this module is run directly
+if (require.main === module) {
+  (async () => {
+    console.log('🚀 Starting client simulator...');
+    await clientSimulator.loadFingerprints();
+    
+    console.log('✅ Client simulator ready');
+    console.log(`📊 ${clientSimulator.getFingerprintCount()} fingerprints loaded`);
+    
+    // Test getting a fingerprint
+    const fingerprint = await clientSimulator.getFingerprint('builder');
+    console.log('🧪 Test fingerprint:', {
+      ip: fingerprint.simulatedIP,
+      client: fingerprint.clientName,
+      location: fingerprint.geoLocation.city
+    });
+  })();
+}
